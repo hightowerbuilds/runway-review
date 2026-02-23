@@ -1,0 +1,12 @@
+.unsaved-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.unsaved-flag {
+  color: #fbbf24;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}

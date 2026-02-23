@@ -1,0 +1,2 @@
+-- Placeholder for remote migration 20260205
+-- This migration already exists in remote history.

@@ -1,0 +1,23 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #242424;
+  color: #111827;
+}
+
+.view {
+  min-height: calc(100vh - 64px);
+  padding: 2rem 1.25rem;
+  box-sizing: border-box;
+  transition: margin-left 180ms ease;
+}
+
+.view-editor {
+  padding: 0;
+}
+
+.view.is-shifted {
+  margin-left: 340px;
+}

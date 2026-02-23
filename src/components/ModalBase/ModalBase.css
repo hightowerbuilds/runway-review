@@ -1,0 +1,98 @@
+.auth-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: rgba(2, 6, 23, 0.78);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.auth-card {
+  width: min(420px, 100%);
+  border: 1px solid #334155;
+  background: #0b1220;
+  border-radius: 0.8rem;
+  padding: 1rem;
+  color: #e2e8f0;
+}
+
+.auth-card h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.auth-card p {
+  margin: 0.5rem 0 0.9rem;
+  color: #94a3b8;
+}
+
+.auth-mode-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.8rem;
+}
+
+.auth-mode-button {
+  border: 1px solid #334155;
+  background: transparent;
+  color: #cbd5e1;
+  border-radius: 0.45rem;
+  padding: 0.4rem 0.65rem;
+  cursor: pointer;
+}
+
+.auth-mode-button.is-active {
+  border-color: #38bdf8;
+  color: #e0f2fe;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+}
+
+.auth-input {
+  width: 100%;
+  border: 1px solid #334155;
+  border-radius: 0.45rem;
+  background: #020617;
+  color: #e2e8f0;
+  padding: 0.52rem 0.62rem;
+  box-sizing: border-box;
+  margin-bottom: 0.7rem;
+}
+
+.auth-submit-button {
+  width: 100%;
+  border: 1px solid #0ea5e9;
+  background: transparent;
+  color: #fff;
+  border-radius: 0.45rem;
+  padding: 0.52rem 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-submit-danger {
+  border-color: #ef4444;
+  background: transparent;
+}
+
+.auth-submit-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.auth-cancel-button {
+  width: 100%;
+  margin-top: 0.5rem;
+  border: 1px solid #334155;
+  background: transparent;
+  color: #cbd5e1;
+  border-radius: 0.45rem;
+  padding: 0.52rem 0.7rem;
+  cursor: pointer;
+}
+
+.auth-error {
+  margin: 0 0 0.7rem;
+  color: #fca5a5;
+  font-size: 0.85rem;
+}

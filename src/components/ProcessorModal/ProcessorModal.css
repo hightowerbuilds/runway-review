@@ -1,0 +1,28 @@
+.processor-list {
+  margin: 0 0 0.8rem;
+  padding-left: 1.15rem;
+}
+
+.processor-line-count {
+  margin: 0 0 0.7rem;
+  color: #cbd5e1;
+}
+
+.processor-item {
+  color: aliceblue;
+  margin: 0.25rem 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+  font-size: 0.9rem;
+}
+
+.processor-name {
+  color: aliceblue;
+}
+
+.processor-line {
+  color: #dbeafe;
+}
