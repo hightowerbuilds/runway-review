@@ -9,6 +9,16 @@ export type StateDeclarationMatch = {
   line: number
 }
 
+export type HookCallMatch = {
+  name: string
+  line: number
+}
+
+export type DataTypeMatch = {
+  typeName: string
+  line: number
+}
+
 export async function extractNamedFunctionsFromTsx(
   code: string,
 ): Promise<NamedFunctionMatch[]> {
@@ -138,6 +148,150 @@ export async function extractStateDeclarationsFromTsx(
     ) {
       const stateNames = collectStateNamesFromDeclarationName(node.name)
       stateNames.forEach((item) => addMatch(item.name, item.node))
+    }
+
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sourceFile)
+  return matches
+}
+
+export async function extractHookCallsFromTsx(
+  code: string,
+): Promise<HookCallMatch[]> {
+  const ts = await import('typescript')
+  const sourceFile = ts.createSourceFile(
+    'file.tsx',
+    code,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  )
+
+  const matches: HookCallMatch[] = []
+  const seen = new Set<string>()
+
+  function isHookName(name: string) {
+    return /^use[A-Z0-9_]/.test(name)
+  }
+
+  function addMatch(name: string, node: import('typescript').Node) {
+    const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
+    const key = `${name}:${line}`
+    if (seen.has(key)) {
+      return
+    }
+
+    seen.add(key)
+    matches.push({ name, line })
+  }
+
+  function visit(node: import('typescript').Node) {
+    if (ts.isCallExpression(node)) {
+      if (ts.isIdentifier(node.expression) && isHookName(node.expression.text)) {
+        addMatch(node.expression.text, node.expression)
+      }
+
+      if (
+        ts.isPropertyAccessExpression(node.expression) &&
+        ts.isIdentifier(node.expression.name) &&
+        isHookName(node.expression.name.text)
+      ) {
+        addMatch(node.expression.name.text, node.expression.name)
+      }
+    }
+
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sourceFile)
+  return matches
+}
+
+export async function extractDataTypesFromTsx(
+  code: string,
+): Promise<DataTypeMatch[]> {
+  const ts = await import('typescript')
+  const sourceFile = ts.createSourceFile(
+    'file.tsx',
+    code,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  )
+
+  const matches: DataTypeMatch[] = []
+  const seen = new Set<string>()
+
+  function addMatch(typeName: string, node: import('typescript').Node) {
+    const cleanTypeName = typeName.trim().replace(/\s+/g, ' ')
+    if (!cleanTypeName) {
+      return
+    }
+
+    const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
+    const key = `${cleanTypeName}:${line}`
+    if (seen.has(key)) {
+      return
+    }
+
+    seen.add(key)
+    matches.push({ typeName: cleanTypeName, line })
+  }
+
+  function inferFromInitializer(
+    initializer: import('typescript').Expression,
+  ): string | null {
+    if (
+      ts.isStringLiteral(initializer) ||
+      ts.isNoSubstitutionTemplateLiteral(initializer) ||
+      ts.isTemplateExpression(initializer)
+    ) {
+      return 'string'
+    }
+
+    if (ts.isNumericLiteral(initializer)) {
+      return 'number'
+    }
+
+    if (initializer.kind === ts.SyntaxKind.TrueKeyword || initializer.kind === ts.SyntaxKind.FalseKeyword) {
+      return 'boolean'
+    }
+
+    if (initializer.kind === ts.SyntaxKind.NullKeyword) {
+      return 'null'
+    }
+
+    if (ts.isArrayLiteralExpression(initializer)) {
+      return 'array'
+    }
+
+    if (ts.isObjectLiteralExpression(initializer)) {
+      return 'object'
+    }
+
+    if (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) {
+      return 'function'
+    }
+
+    if (ts.isIdentifier(initializer) && initializer.text === 'undefined') {
+      return 'undefined'
+    }
+
+    return null
+  }
+
+  function visit(node: import('typescript').Node) {
+    if (ts.isTypeNode(node)) {
+      addMatch(node.getText(sourceFile), node)
+    }
+
+    if (ts.isVariableDeclaration(node) && !node.type && node.initializer) {
+      const inferred = inferFromInitializer(node.initializer)
+      if (inferred) {
+        addMatch(inferred, node.initializer)
+      }
     }
 
     ts.forEachChild(node, visit)

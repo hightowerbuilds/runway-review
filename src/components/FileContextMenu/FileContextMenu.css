@@ -1,5 +1,8 @@
 .file-context-menu {
   position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
   z-index: 95;
   transform: translateY(4px);
   border: 1px solid #334155;
@@ -7,6 +10,16 @@
   border-radius: 0.45rem;
   padding: 0.35rem;
   box-shadow: 0 8px 20px rgba(2, 6, 23, 0.38);
+}
+
+.file-context-action {
+  border: 1px solid #334155;
+  background: transparent;
+  color: #e2e8f0;
+  border-radius: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.82rem;
 }
 
 .file-context-delete {

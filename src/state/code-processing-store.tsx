@@ -36,6 +36,7 @@ type CodeProcessingContextValue = {
   getPageFilename: (pageNumber: number) => string
   setPageCode: (pageNumber: number, code: string) => void
   setPageLanguage: (pageNumber: number, language: CodeLanguage) => void
+  setPageFilename: (pageNumber: number, filename: string) => void
   removePageCode: (pageNumber: number) => void
   clearAllCode: () => void
   exportSnapshot: () => CodeProcessingSnapshot
@@ -54,6 +55,7 @@ type CodeProcessingContextValue = {
 type Action =
   | { type: 'set_page_code'; pageNumber: number; code: string }
   | { type: 'set_page_language'; pageNumber: number; language: CodeLanguage }
+  | { type: 'set_page_filename'; pageNumber: number; filename: string }
   | { type: 'remove_page_code'; pageNumber: number }
   | { type: 'clear_all_code' }
   | { type: 'import_snapshot'; snapshot: CodeProcessingSnapshot }
@@ -83,6 +85,10 @@ function fromSnapshot(snapshot: CodeProcessingSnapshot): Record<number, CodeDocu
       : 'tsx'
     documentsByPage[document.pageNumber] = {
       pageNumber: document.pageNumber,
+      filename:
+        typeof (document as { filename?: unknown }).filename === 'string'
+          ? (document as { filename?: string }).filename
+          : undefined,
       code: document.code,
       language: safeLanguage,
       updatedAt: document.updatedAt,
@@ -102,6 +108,7 @@ function reducer(state: CodeProcessingState, action: Action): CodeProcessingStat
           ...state.documentsByPage,
           [action.pageNumber]: {
             pageNumber: action.pageNumber,
+            filename: state.documentsByPage[action.pageNumber]?.filename,
             code: action.code,
             language: state.documentsByPage[action.pageNumber]?.language ?? 'tsx',
             updatedAt: now,
@@ -118,10 +125,38 @@ function reducer(state: CodeProcessingState, action: Action): CodeProcessingStat
           ...state.documentsByPage,
           [action.pageNumber]: {
             pageNumber: action.pageNumber,
+            filename: state.documentsByPage[action.pageNumber]?.filename,
             code:
               state.documentsByPage[action.pageNumber]?.code ??
               buildDefaultPageCode(action.pageNumber, action.language),
             language: action.language,
+            updatedAt: now,
+          },
+        },
+      }
+    }
+    case 'set_page_filename': {
+      const now = new Date().toISOString()
+      const trimmedName = action.filename.trim()
+      if (!trimmedName) {
+        return state
+      }
+
+      return {
+        ...state,
+        revision: state.revision + 1,
+        documentsByPage: {
+          ...state.documentsByPage,
+          [action.pageNumber]: {
+            pageNumber: action.pageNumber,
+            filename: trimmedName,
+            code:
+              state.documentsByPage[action.pageNumber]?.code ??
+              buildDefaultPageCode(
+                action.pageNumber,
+                state.documentsByPage[action.pageNumber]?.language ?? 'tsx',
+              ),
+            language: state.documentsByPage[action.pageNumber]?.language ?? 'tsx',
             updatedAt: now,
           },
         },
@@ -220,13 +255,19 @@ export function CodeProcessingProvider({ children }: { children: ReactNode }) {
         state.documentsByPage[pageNumber]?.language ?? 'tsx',
       getPageFilename: (pageNumber) => {
         const language = state.documentsByPage[pageNumber]?.language ?? 'tsx'
-        return `page-${pageNumber}.${getCodeFileExtension(language)}`
+        return (
+          state.documentsByPage[pageNumber]?.filename ??
+          `page-${pageNumber}.${getCodeFileExtension(language)}`
+        )
       },
       setPageCode: (pageNumber, code) => {
         dispatch({ type: 'set_page_code', pageNumber, code })
       },
       setPageLanguage: (pageNumber, language) => {
         dispatch({ type: 'set_page_language', pageNumber, language })
+      },
+      setPageFilename: (pageNumber, filename) => {
+        dispatch({ type: 'set_page_filename', pageNumber, filename })
       },
       removePageCode: (pageNumber) => {
         dispatch({ type: 'remove_page_code', pageNumber })

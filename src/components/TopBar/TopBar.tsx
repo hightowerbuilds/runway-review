@@ -60,7 +60,7 @@ export function TopBar({
           onClick={onOpenProcessor}
           disabled={!currentPageNumber}
         >
-          Code Processor
+          Thumbnails
         </button>
         <button
           type="button"
@@ -88,7 +88,11 @@ export function TopBar({
               key={pageNumber}
               className={currentOpenPageNumber === pageNumber ? 'window-tab is-active' : 'window-tab'}
             >
-              <button type="button" className="window-tab-link" onClick={() => onOpenFile(pageNumber)}>
+              <button
+                type="button"
+                className="window-tab-link"
+                onClick={() => onOpenFile(pageNumber)}
+              >
                 {getPageFilename(pageNumber)}
               </button>
               <button

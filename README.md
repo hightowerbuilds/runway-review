@@ -13,13 +13,6 @@ A browser-based IDE workspace with multi-file editing, username-based restore/sa
 - TSX code processor for named functions + exact line spans
 - Full-screen review mode with synced highlights/readout + scanline
 
-```text
- _____ _____    _    _____ _   _ ____  _____ ____
-|  ___| ____|  / \  |_   _| | | |  _ \| ____/ ___|
-| |_  |  _|   / _ \   | | | | | | |_) |  _| \___ \
-|  _| | |___ / ___ \  | | | |_| |  _ <| |___ ___) |
-|_|   |_____/_/   \_\ |_|  \___/|_| \_\_____|____/
-```
 
 ## Features
 

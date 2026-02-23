@@ -24,8 +24,12 @@ import {
 } from '../page-registry'
 import { loadWorkspaceSnapshot } from '../lib/supabase-rest'
 import {
+  extractDataTypesFromTsx,
+  extractHookCallsFromTsx,
   extractStateDeclarationsFromTsx,
   extractNamedFunctionsFromTsx,
+  type DataTypeMatch,
+  type HookCallMatch,
   type NamedFunctionMatch,
   type StateDeclarationMatch,
 } from '../lib/tsx-function-processor'
@@ -102,6 +106,7 @@ function AppLayout({ children }: { children: ReactNode }) {
     getPageLanguage,
     getPageFilename,
     setPageLanguage,
+    setPageFilename,
     removePageCode,
     clearAllCode,
     exportSnapshot,
@@ -140,10 +145,18 @@ function AppLayout({ children }: { children: ReactNode }) {
   const [processedStateDeclarations, setProcessedStateDeclarations] = useState<
     StateDeclarationMatch[]
   >([])
+  const [processedHooks, setProcessedHooks] = useState<HookCallMatch[]>([])
+  const [processedDataTypes, setProcessedDataTypes] = useState<DataTypeMatch[]>([])
+  const [processedSourceCode, setProcessedSourceCode] = useState('')
   const [processedLineCount, setProcessedLineCount] = useState(0)
   const [processorMessage, setProcessorMessage] = useState('')
   const [reviewCode, setReviewCode] = useState('')
   const [reviewFunctions, setReviewFunctions] = useState<NamedFunctionMatch[]>([])
+  const [reviewStateDeclarations, setReviewStateDeclarations] = useState<StateDeclarationMatch[]>(
+    [],
+  )
+  const [reviewHooks, setReviewHooks] = useState<HookCallMatch[]>([])
+  const [reviewDataTypes, setReviewDataTypes] = useState<DataTypeMatch[]>([])
   const [activeReviewFunctionKey, setActiveReviewFunctionKey] = useState<string | null>(null)
   const [functionOverlayRects, setFunctionOverlayRects] = useState<
     Record<string, { top: number; height: number }>
@@ -157,6 +170,7 @@ function AppLayout({ children }: { children: ReactNode }) {
     lineHeight: number
   } | null>(null)
   const [isAutoScrolling, setIsAutoScrolling] = useState(false)
+  const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(false)
   const reviewViewportRef = useRef<HTMLDivElement | null>(null)
   const reviewCodeLineRef = useRef<HTMLOListElement | null>(null)
   const autoScrollFrameRef = useRef<number | null>(null)
@@ -187,6 +201,22 @@ function AppLayout({ children }: { children: ReactNode }) {
       accumulator[getFunctionKey(fn)] = fn
       return accumulator
     }, {})
+  }, [reviewFunctions])
+  const nestedReviewFunctionKeys = useMemo(() => {
+    const nested = new Set<string>()
+    reviewFunctions.forEach((candidate) => {
+      const isNested = reviewFunctions.some(
+        (parent) =>
+          parent !== candidate &&
+          candidate.startLine >= parent.startLine &&
+          candidate.endLine <= parent.endLine &&
+          (candidate.startLine !== parent.startLine || candidate.endLine !== parent.endLine),
+      )
+      if (isNested) {
+        nested.add(getFunctionKey(candidate))
+      }
+    })
+    return nested
   }, [reviewFunctions])
   const activeFunctionOverlay = activeReviewFunctionKey
     ? (functionOverlayRects[activeReviewFunctionKey] ?? null)
@@ -220,26 +250,115 @@ function AppLayout({ children }: { children: ReactNode }) {
     : activeReviewFunction
       ? getFunctionReadoutText(activeReviewFunction)
       : ''
-  const readoutVisibleText = activeReadoutText.slice(
-    0,
-    Math.floor(activeReadoutText.length * activeReadoutProgress),
-  )
+  const shouldShowFullActiveText =
+    !isAutoScrollEnabled ||
+    (activeReviewFunctionKey ? nestedReviewFunctionKeys.has(activeReviewFunctionKey) : false)
+  const readoutVisibleText = shouldShowFullActiveText
+    ? activeReadoutText
+    : activeReadoutText.slice(0, Math.floor(activeReadoutText.length * activeReadoutProgress))
+  const reviewFunctionMetadataByKey = useMemo(() => {
+    const groups = reviewFunctions.map((fn) => ({
+      fn,
+      stateItems: [] as string[],
+      hookItems: [] as string[],
+      dataTypeItems: [] as string[],
+    }))
+
+    reviewStateDeclarations.forEach((stateItem) => {
+      const candidates = groups.filter(
+        ({ fn }) => stateItem.line >= fn.startLine && stateItem.line <= fn.endLine,
+      )
+      if (candidates.length === 0) {
+        return
+      }
+
+      const bestMatch = candidates.reduce((best, current) => {
+        const bestSpan = best.fn.endLine - best.fn.startLine
+        const currentSpan = current.fn.endLine - current.fn.startLine
+        return currentSpan < bestSpan ? current : best
+      })
+
+      if (!bestMatch.stateItems.includes(stateItem.name)) {
+        bestMatch.stateItems.push(stateItem.name)
+      }
+    })
+
+    reviewHooks.forEach((hookItem) => {
+      const candidates = groups.filter(
+        ({ fn }) => hookItem.line >= fn.startLine && hookItem.line <= fn.endLine,
+      )
+      if (candidates.length === 0) {
+        return
+      }
+
+      const bestMatch = candidates.reduce((best, current) => {
+        const bestSpan = best.fn.endLine - best.fn.startLine
+        const currentSpan = current.fn.endLine - current.fn.startLine
+        return currentSpan < bestSpan ? current : best
+      })
+
+      if (!bestMatch.hookItems.includes(hookItem.name)) {
+        bestMatch.hookItems.push(hookItem.name)
+      }
+    })
+
+    reviewDataTypes.forEach((item) => {
+      const candidates = groups.filter(
+        ({ fn }) => item.line >= fn.startLine && item.line <= fn.endLine,
+      )
+      if (candidates.length === 0) {
+        return
+      }
+
+      const bestMatch = candidates.reduce((best, current) => {
+        const bestSpan = best.fn.endLine - best.fn.startLine
+        const currentSpan = current.fn.endLine - current.fn.startLine
+        return currentSpan < bestSpan ? current : best
+      })
+
+      if (!bestMatch.dataTypeItems.includes(item.typeName)) {
+        bestMatch.dataTypeItems.push(item.typeName)
+      }
+    })
+
+    return groups.reduce<
+      Record<string, { stateItems: string[]; hookItems: string[]; dataTypeItems: string[] }>
+    >((accumulator, group) => {
+      accumulator[getFunctionKey(group.fn)] = {
+        stateItems: group.stateItems,
+        hookItems: group.hookItems,
+        dataTypeItems: group.dataTypeItems,
+      }
+      return accumulator
+    }, {})
+  }, [reviewDataTypes, reviewFunctions, reviewHooks, reviewStateDeclarations])
   const reviewOverlays = useMemo(() => {
     const completed = completedReviewFunctionKeys
       .filter((functionKey) => functionKey !== activeReviewFunctionKey)
       .map((functionKey) => {
         const overlayRect = functionOverlayRects[functionKey]
+        const fn = reviewFunctionByKey[functionKey]
+        const metadata = reviewFunctionMetadataByKey[functionKey]
         const completedText = functionSourceByKey[functionKey] ?? ''
-        if (!overlayRect || !completedText) {
+        if (!overlayRect || !completedText || !fn) {
           return null
         }
 
         return {
           key: `${functionKey}-completed-overlay`,
+          functionKey,
+          functionName: fn.name,
+          startLine: fn.startLine,
+          endLine: fn.endLine,
           top: overlayRect.top,
           height: overlayRect.height,
           text: completedText,
           isActive: false,
+          isCompleted: true,
+          isHoverReveal: false,
+          stateItems: metadata?.stateItems ?? [],
+          hookItems: metadata?.hookItems ?? [],
+          dataTypeItems: metadata?.dataTypeItems ?? [],
         }
       })
       .filter(
@@ -247,31 +366,55 @@ function AppLayout({ children }: { children: ReactNode }) {
           overlay,
         ): overlay is {
           key: string
+          functionKey: string
+          functionName: string
+          startLine: number
+          endLine: number
           top: number
           height: number
           text: string
           isActive: boolean
+          isCompleted: boolean
+          isHoverReveal: boolean
+          stateItems: string[]
+          hookItems: string[]
+          dataTypeItems: string[]
         } => overlay !== null,
       )
 
-    if (activeFunctionOverlay) {
+    if (activeFunctionOverlay && activeReviewFunctionKey && activeReviewFunction) {
+      const metadata = reviewFunctionMetadataByKey[activeReviewFunctionKey]
       completed.push({
         key: `${activeReviewFunctionKey ?? 'active'}-active-overlay`,
+        functionKey: activeReviewFunctionKey,
+        functionName: activeReviewFunction.name,
+        startLine: activeReviewFunction.startLine,
+        endLine: activeReviewFunction.endLine,
         top: activeFunctionOverlay.top,
         height: activeFunctionOverlay.height,
         text: readoutVisibleText || '\u00A0',
         isActive: true,
+        isCompleted: false,
+        isHoverReveal: !isAutoScrollEnabled,
+        stateItems: metadata?.stateItems ?? [],
+        hookItems: metadata?.hookItems ?? [],
+        dataTypeItems: metadata?.dataTypeItems ?? [],
       })
     }
 
     return completed
   }, [
+    activeReviewFunction,
     activeFunctionOverlay,
     activeReviewFunctionKey,
     completedReviewFunctionKeys,
     functionOverlayRects,
     functionSourceByKey,
+    isAutoScrollEnabled,
+    nestedReviewFunctionKeys,
     readoutVisibleText,
+    reviewFunctionByKey,
+    reviewFunctionMetadataByKey,
   ])
 
   useEffect(() => {
@@ -521,6 +664,23 @@ function AppLayout({ children }: { children: ReactNode }) {
     navigate({ to: '/' })
   }
 
+  function handleRenameFile(pageNumber: number) {
+    const currentName = getPageFilename(pageNumber)
+    const enteredName = window.prompt('Rename file:', currentName)
+    if (enteredName === null) {
+      return
+    }
+
+    const trimmedName = enteredName.trim()
+    if (!trimmedName) {
+      setWorkspaceMessage('Filename cannot be empty.')
+      return
+    }
+
+    setPageFilename(pageNumber, trimmedName)
+    setWorkspaceMessage(`Renamed file to ${trimmedName}.`)
+  }
+
   function handleOpenFile(pageNumber: number) {
     setOpenPages((previousPages) => {
       if (previousPages.includes(pageNumber)) {
@@ -545,16 +705,58 @@ function AppLayout({ children }: { children: ReactNode }) {
     const language = getPageLanguage(currentPageNumber)
     setReviewCode(code)
     if (language === 'tsx') {
-      const extractedFunctions = await extractNamedFunctionsFromTsx(code)
+      const [extractedFunctions, extractedStates, extractedHooks, extractedDataTypes] =
+        await Promise.all([
+          extractNamedFunctionsFromTsx(code),
+          extractStateDeclarationsFromTsx(code),
+          extractHookCallsFromTsx(code),
+          extractDataTypesFromTsx(code),
+        ])
       setReviewFunctions(extractedFunctions)
+      setReviewStateDeclarations(extractedStates)
+      setReviewHooks(extractedHooks)
+      setReviewDataTypes(extractedDataTypes)
     } else {
       setReviewFunctions([])
+      setReviewStateDeclarations([])
+      setReviewHooks([])
+      setReviewDataTypes([])
     }
     setFunctionReadoutProgress({})
     setActiveReviewFunctionKey(null)
+    setIsAutoScrollEnabled(true)
     setIsAutoScrolling(true)
     autoScrollEnabledRef.current = true
     setIsReviewOpen(true)
+  }
+
+  function handleToggleAutoScroll() {
+    if (!isReviewOpen) {
+      return
+    }
+
+    if (resumeTimerRef.current) {
+      window.clearTimeout(resumeTimerRef.current)
+      resumeTimerRef.current = null
+    }
+
+    setIsAutoScrollEnabled((previous) => {
+      const next = !previous
+      autoScrollEnabledRef.current = next
+      setIsAutoScrolling(next)
+      if (next) {
+        lastFrameTimeRef.current = null
+      }
+      return next
+    })
+  }
+
+  function handleHoverReviewFunction(functionKey: string | null) {
+    if (isAutoScrollEnabled) {
+      return
+    }
+
+    setActiveReviewFunctionKey(functionKey)
   }
 
   async function handleProcessCode() {
@@ -562,6 +764,9 @@ function AppLayout({ children }: { children: ReactNode }) {
       setProcessorMessage('Open a TSX file window first.')
       setProcessedFunctions([])
       setProcessedStateDeclarations([])
+      setProcessedHooks([])
+      setProcessedDataTypes([])
+      setProcessedSourceCode('')
       setProcessedLineCount(0)
       setIsProcessorModalOpen(true)
       return
@@ -572,6 +777,9 @@ function AppLayout({ children }: { children: ReactNode }) {
       setProcessorMessage('Code Processor currently works only for TSX files.')
       setProcessedFunctions([])
       setProcessedStateDeclarations([])
+      setProcessedHooks([])
+      setProcessedDataTypes([])
+      setProcessedSourceCode('')
       setProcessedLineCount(0)
       setIsProcessorModalOpen(true)
       return
@@ -580,9 +788,11 @@ function AppLayout({ children }: { children: ReactNode }) {
     const code = getPageCode(currentPageNumber)
     const normalizedCode = code.replace(/\r\n?/g, '\n')
     const lineCount = normalizedCode.length === 0 ? 1 : normalizedCode.split('\n').length
-    const [names, states] = await Promise.all([
+    const [names, states, hooks, dataTypes] = await Promise.all([
       extractNamedFunctionsFromTsx(code),
       extractStateDeclarationsFromTsx(code),
+      extractHookCallsFromTsx(code),
+      extractDataTypesFromTsx(code),
     ])
     setProcessedLineCount(lineCount)
     setProcessorMessage(
@@ -592,6 +802,9 @@ function AppLayout({ children }: { children: ReactNode }) {
     )
     setProcessedFunctions(names)
     setProcessedStateDeclarations(states)
+    setProcessedHooks(hooks)
+    setProcessedDataTypes(dataTypes)
+    setProcessedSourceCode(code)
     setIsProcessorModalOpen(true)
   }
 
@@ -619,12 +832,10 @@ function AppLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isReviewOpen) {
       autoScrollEnabledRef.current = false
+      setIsAutoScrollEnabled(false)
       setIsAutoScrolling(false)
       return
     }
-
-    autoScrollEnabledRef.current = true
-    setIsAutoScrolling(true)
 
     const tick = (timestamp: number) => {
       const viewport = reviewViewportRef.current
@@ -702,9 +913,17 @@ function AppLayout({ children }: { children: ReactNode }) {
 
     const syncHighlight = () => {
       const focusLine = Math.floor((viewport.scrollTop + viewport.clientHeight * 0.35) / safeLineHeight) + 1
-      const activeFn = reviewFunctions.find(
+      const matches = reviewFunctions.filter(
         (fn) => focusLine >= fn.startLine && focusLine <= fn.endLine,
       )
+      const activeFn =
+        matches.length > 0
+          ? matches.reduce((best, current) => {
+              const bestSpan = best.endLine - best.startLine
+              const currentSpan = current.endLine - current.startLine
+              return currentSpan < bestSpan ? current : best
+            })
+          : null
       if (!activeFn) {
         setActiveReviewFunctionKey(null)
         return
@@ -716,11 +935,13 @@ function AppLayout({ children }: { children: ReactNode }) {
       const focusPx = viewport.scrollTop + viewport.clientHeight * 0.35
       const rawProgress = (focusPx - functionStartPx) / Math.max(functionEndPx - functionStartPx, 1)
       const clampedProgress = Math.max(0, Math.min(1, rawProgress))
+      const isNested = nestedReviewFunctionKeys.has(functionKey)
+      const nextProgress = isNested ? 1 : clampedProgress
 
       setActiveReviewFunctionKey(functionKey)
       setFunctionReadoutProgress((previous) => ({
         ...previous,
-        [functionKey]: Math.max(previous[functionKey] ?? 0, clampedProgress),
+        [functionKey]: Math.max(previous[functionKey] ?? 0, nextProgress),
       }))
     }
 
@@ -732,7 +953,7 @@ function AppLayout({ children }: { children: ReactNode }) {
       viewport.removeEventListener('scroll', syncHighlight)
       window.removeEventListener('resize', syncHighlight)
     }
-  }, [isReviewOpen, reviewFunctions, reviewLines.length])
+  }, [isReviewOpen, nestedReviewFunctionKeys, reviewFunctions, reviewLines.length])
 
   useEffect(() => {
     if (!isReviewOpen) {
@@ -784,7 +1005,12 @@ function AppLayout({ children }: { children: ReactNode }) {
   }, [isReviewOpen, reviewFunctions, reviewLines.length])
 
   useEffect(() => {
-    if (!isReviewOpen || !activeReviewFunctionKey || typeof window === 'undefined') {
+    if (
+      !isReviewOpen ||
+      !activeReviewFunctionKey ||
+      shouldShowFullActiveText ||
+      typeof window === 'undefined'
+    ) {
       return
     }
 
@@ -827,7 +1053,7 @@ function AppLayout({ children }: { children: ReactNode }) {
         window.cancelAnimationFrame(frameId)
       }
     }
-  }, [activeReviewFunctionKey, isReviewOpen])
+  }, [activeReviewFunctionKey, isReviewOpen, shouldShowFullActiveText])
 
   useEffect(() => {
     if (!isReviewOpen || typeof window === 'undefined') {
@@ -996,6 +1222,10 @@ function AppLayout({ children }: { children: ReactNode }) {
         <FileContextMenu
           x={fileContextMenu.x}
           y={fileContextMenu.y}
+          onRenameFile={() => {
+            handleRenameFile(fileContextMenu.pageNumber)
+            setFileContextMenu(null)
+          }}
           onDeleteFile={() => {
             setDeleteConfirmPage(fileContextMenu.pageNumber)
             setFileContextMenu(null)
@@ -1014,6 +1244,7 @@ function AppLayout({ children }: { children: ReactNode }) {
       <ReviewModal
         isOpen={isReviewOpen}
         isAutoScrolling={isAutoScrolling}
+        isAutoScrollEnabled={isAutoScrollEnabled}
         reviewLines={reviewLines}
         reviewFunctions={reviewFunctions}
         activeReviewFunction={activeReviewFunction}
@@ -1021,7 +1252,8 @@ function AppLayout({ children }: { children: ReactNode }) {
         overlays={reviewOverlays}
         reviewViewportRef={reviewViewportRef}
         reviewCodeLineRef={reviewCodeLineRef}
-        onPauseInteraction={pauseAutoScrollForInteraction}
+        onHoverFunction={handleHoverReviewFunction}
+        onToggleAutoScroll={handleToggleAutoScroll}
         onClose={() => setIsReviewOpen(false)}
       />
       <ProcessorModal
@@ -1030,6 +1262,9 @@ function AppLayout({ children }: { children: ReactNode }) {
         lineCount={processedLineCount}
         functions={processedFunctions}
         stateDeclarations={processedStateDeclarations}
+        hooks={processedHooks}
+        dataTypes={processedDataTypes}
+        sourceCode={processedSourceCode}
         onClose={() => setIsProcessorModalOpen(false)}
       />
       <NewPageModal

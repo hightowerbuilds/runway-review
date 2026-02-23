@@ -2,6 +2,7 @@ export type CodeLanguage = 'html' | 'css' | 'tsx'
 
 export type CodeDocument = {
   pageNumber: number
+  filename?: string
   code: string
   language: CodeLanguage
   updatedAt: string
