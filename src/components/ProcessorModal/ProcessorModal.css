@@ -26,3 +26,15 @@
 .processor-line {
   color: #dbeafe;
 }
+
+.processor-subheading {
+  margin: 0.2rem 0 0.5rem;
+  font-size: 0.92rem;
+  color: #f1f5f9;
+}
+
+.processor-empty {
+  margin: 0 0 0.8rem;
+  color: #94a3b8;
+  font-size: 0.84rem;
+}

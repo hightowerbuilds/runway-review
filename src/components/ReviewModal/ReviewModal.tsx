@@ -1,6 +1,8 @@
 import { type RefObject } from 'react'
 
-import type { NamedFunctionMatch } from '../../lib/tsx-function-processor'
+import type {
+  NamedFunctionMatch,
+} from '../../lib/tsx-function-processor'
 
 import './ReviewModal.css'
 
@@ -16,9 +18,9 @@ type ReviewModalProps = {
   isOpen: boolean
   isAutoScrolling: boolean
   reviewLines: string[]
+  reviewFunctions: NamedFunctionMatch[]
   activeReviewFunction: NamedFunctionMatch | null
-  activeReadoutProgress: number
-  scanlineExtent: { top: number; height: number } | null
+  railExtent: { top: number; height: number; lineHeight: number } | null
   overlays: OverlayItem[]
   reviewViewportRef: RefObject<HTMLDivElement | null>
   reviewCodeLineRef: RefObject<HTMLOListElement | null>
@@ -30,9 +32,9 @@ export function ReviewModal({
   isOpen,
   isAutoScrolling,
   reviewLines,
+  reviewFunctions,
   activeReviewFunction,
-  activeReadoutProgress,
-  scanlineExtent,
+  railExtent,
   overlays,
   reviewViewportRef,
   reviewCodeLineRef,
@@ -80,12 +82,29 @@ export function ReviewModal({
                 </div>
               ))}
             </div>
-            <div className="review-scanline-layer" aria-hidden="true">
-              {scanlineExtent ? (
-                <div
-                  className="review-scanline"
-                  style={{ top: `${scanlineExtent.top}px`, height: `${scanlineExtent.height}px` }}
-                />
+            <div className="review-rail-layer" aria-hidden="true">
+              {railExtent ? (
+                <>
+                  <div
+                    className="review-rail-base"
+                    style={{ top: `${railExtent.top}px`, height: `${railExtent.height}px` }}
+                  />
+                  {reviewFunctions.map((fn) => {
+                    const segmentTop = railExtent.top + (fn.startLine - 1) * railExtent.lineHeight
+                    const segmentHeight = Math.max(
+                      3,
+                      (fn.endLine - fn.startLine + 1) * railExtent.lineHeight,
+                    )
+
+                    return (
+                      <div
+                        key={`${fn.name}-${fn.startLine}-${fn.endLine}-rail`}
+                        className="review-rail-function"
+                        style={{ top: `${segmentTop}px`, height: `${segmentHeight}px` }}
+                      />
+                    )
+                  })}
+                </>
               ) : null}
             </div>
             <div className="review-content">
@@ -121,28 +140,6 @@ export function ReviewModal({
               </ol>
             </div>
           </div>
-          <aside className="review-side-info">
-            <h3>Function Context</h3>
-            {activeReviewFunction ? (
-              <>
-                <p>
-                  <strong>{activeReviewFunction.name}</strong>
-                </p>
-                <p>
-                  Lines {activeReviewFunction.startLine}
-                  {activeReviewFunction.endLine !== activeReviewFunction.startLine
-                    ? `-${activeReviewFunction.endLine}`
-                    : ''}
-                </p>
-                <p>Progress: {Math.round(activeReadoutProgress * 100)}%</p>
-                <p>
-                  Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
-                </p>
-              </>
-            ) : (
-              <p>Scroll through code to activate function readout.</p>
-            )}
-          </aside>
         </div>
       </div>
     </section>

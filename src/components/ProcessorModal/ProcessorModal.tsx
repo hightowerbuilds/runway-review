@@ -1,4 +1,7 @@
-import type { NamedFunctionMatch } from '../../lib/tsx-function-processor'
+import type {
+  NamedFunctionMatch,
+  StateDeclarationMatch,
+} from '../../lib/tsx-function-processor'
 
 import '../ModalBase/ModalBase.css'
 import './ProcessorModal.css'
@@ -8,10 +11,18 @@ type ProcessorModalProps = {
   message: string
   lineCount: number
   functions: NamedFunctionMatch[]
+  stateDeclarations: StateDeclarationMatch[]
   onClose: () => void
 }
 
-export function ProcessorModal({ isOpen, message, lineCount, functions, onClose }: ProcessorModalProps) {
+export function ProcessorModal({
+  isOpen,
+  message,
+  lineCount,
+  functions,
+  stateDeclarations,
+  onClose,
+}: ProcessorModalProps) {
   if (!isOpen) {
     return null
   }
@@ -37,6 +48,19 @@ export function ProcessorModal({ isOpen, message, lineCount, functions, onClose 
             ))}
           </ol>
         ) : null}
+        <h3 className="processor-subheading">State Declarations</h3>
+        {stateDeclarations.length > 0 ? (
+          <ol className="processor-list">
+            {stateDeclarations.map((stateItem) => (
+              <li key={`${stateItem.name}-${stateItem.line}`} className="processor-item">
+                <span className="processor-name">{stateItem.name}</span>
+                <span className="processor-line">line {stateItem.line}</span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="processor-empty">No `useState` declarations found.</p>
+        )}
         <button type="button" className="auth-cancel-button" onClick={onClose}>
           Close
         </button>

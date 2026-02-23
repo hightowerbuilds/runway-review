@@ -24,8 +24,10 @@ import {
 } from '../page-registry'
 import { loadWorkspaceSnapshot } from '../lib/supabase-rest'
 import {
+  extractStateDeclarationsFromTsx,
   extractNamedFunctionsFromTsx,
   type NamedFunctionMatch,
+  type StateDeclarationMatch,
 } from '../lib/tsx-function-processor'
 import { CodeProcessingProvider, useCodeProcessingStore } from '../state/code-processing-store'
 import type { CodeLanguage, CodeProcessingSnapshot } from '../code-processing'
@@ -33,7 +35,6 @@ import type { CodeLanguage, CodeProcessingSnapshot } from '../code-processing'
 const AUTO_SCROLL_SPEED_PX_PER_SECOND = 26
 const AUTO_SCROLL_RESUME_DELAY_MS = 250
 const READOUT_TAIL_PROGRESS_PER_SECOND = 0.42
-const SCANLINE_TAIL_SPEED_PX_PER_SECOND = 28
 const USERNAME_STORAGE_KEY = 'runway.username'
 
 function getFunctionKey(fn: NamedFunctionMatch) {
@@ -136,6 +137,9 @@ function AppLayout({ children }: { children: ReactNode }) {
   const [isReviewOpen, setIsReviewOpen] = useState(false)
   const [isProcessorModalOpen, setIsProcessorModalOpen] = useState(false)
   const [processedFunctions, setProcessedFunctions] = useState<NamedFunctionMatch[]>([])
+  const [processedStateDeclarations, setProcessedStateDeclarations] = useState<
+    StateDeclarationMatch[]
+  >([])
   const [processedLineCount, setProcessedLineCount] = useState(0)
   const [processorMessage, setProcessorMessage] = useState('')
   const [reviewCode, setReviewCode] = useState('')
@@ -147,7 +151,11 @@ function AppLayout({ children }: { children: ReactNode }) {
   const [functionReadoutProgress, setFunctionReadoutProgress] = useState<
     Record<string, number>
   >({})
-  const [scanlineExtent, setScanlineExtent] = useState<{ top: number; height: number } | null>(null)
+  const [reviewRailExtent, setReviewRailExtent] = useState<{
+    top: number
+    height: number
+    lineHeight: number
+  } | null>(null)
   const [isAutoScrolling, setIsAutoScrolling] = useState(false)
   const reviewViewportRef = useRef<HTMLDivElement | null>(null)
   const reviewCodeLineRef = useRef<HTMLOListElement | null>(null)
@@ -234,7 +242,17 @@ function AppLayout({ children }: { children: ReactNode }) {
           isActive: false,
         }
       })
-      .filter((overlay): overlay is { key: string; top: number; height: number; text: string; isActive: boolean } => overlay !== null)
+      .filter(
+        (
+          overlay,
+        ): overlay is {
+          key: string
+          top: number
+          height: number
+          text: string
+          isActive: boolean
+        } => overlay !== null,
+      )
 
     if (activeFunctionOverlay) {
       completed.push({
@@ -543,6 +561,7 @@ function AppLayout({ children }: { children: ReactNode }) {
     if (!currentPageNumber) {
       setProcessorMessage('Open a TSX file window first.')
       setProcessedFunctions([])
+      setProcessedStateDeclarations([])
       setProcessedLineCount(0)
       setIsProcessorModalOpen(true)
       return
@@ -552,6 +571,7 @@ function AppLayout({ children }: { children: ReactNode }) {
     if (language !== 'tsx') {
       setProcessorMessage('Code Processor currently works only for TSX files.')
       setProcessedFunctions([])
+      setProcessedStateDeclarations([])
       setProcessedLineCount(0)
       setIsProcessorModalOpen(true)
       return
@@ -560,7 +580,10 @@ function AppLayout({ children }: { children: ReactNode }) {
     const code = getPageCode(currentPageNumber)
     const normalizedCode = code.replace(/\r\n?/g, '\n')
     const lineCount = normalizedCode.length === 0 ? 1 : normalizedCode.split('\n').length
-    const names = await extractNamedFunctionsFromTsx(code)
+    const [names, states] = await Promise.all([
+      extractNamedFunctionsFromTsx(code),
+      extractStateDeclarationsFromTsx(code),
+    ])
     setProcessedLineCount(lineCount)
     setProcessorMessage(
       names.length === 0
@@ -568,6 +591,7 @@ function AppLayout({ children }: { children: ReactNode }) {
         : `Found ${names.length} named function(s).`,
     )
     setProcessedFunctions(names)
+    setProcessedStateDeclarations(states)
     setIsProcessorModalOpen(true)
   }
 
@@ -807,14 +831,9 @@ function AppLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isReviewOpen || typeof window === 'undefined') {
-      setScanlineExtent(null)
+      setReviewRailExtent(null)
       return
     }
-
-    let frameId: number | null = null
-    let lastTime: number | null = null
-    let tailOffsetPx = 0
-    let maxReachedBottomPx = 0
 
     const getOffsetTopWithinPane = (element: HTMLElement, pane: HTMLElement) => {
       let totalTop = 0
@@ -828,77 +847,51 @@ function AppLayout({ children }: { children: ReactNode }) {
       return totalTop
     }
 
-    const tick = (timestamp: number) => {
-      const viewport = reviewViewportRef.current
+    const syncRail = () => {
       const lineList = reviewCodeLineRef.current
       const codePane = lineList?.closest('.review-code-pane') as HTMLElement | null
 
-      if (!viewport || !lineList || !codePane) {
-        frameId = window.requestAnimationFrame(tick)
+      if (!lineList || !codePane) {
         return
       }
 
       const firstLine = lineList.querySelector('li') as HTMLElement | null
       const lastLine = lineList.lastElementChild as HTMLElement | null
       if (!firstLine || !lastLine) {
-        setScanlineExtent(null)
-        frameId = window.requestAnimationFrame(tick)
+        setReviewRailExtent(null)
         return
       }
 
       const firstTop = getOffsetTopWithinPane(firstLine, codePane)
       const lastBottom = getOffsetTopWithinPane(lastLine, codePane) + lastLine.offsetHeight
-      const maxBottom = Math.max(lastBottom, firstTop)
+      const computedLineHeight = parseFloat(window.getComputedStyle(firstLine).lineHeight)
+      const lineHeight =
+        Number.isFinite(computedLineHeight) && computedLineHeight > 0
+          ? computedLineHeight
+          : Math.max(firstLine.offsetHeight, 1)
+      const railHeight = Math.max(lastBottom - firstTop, lineHeight)
 
-      const maxScrollTop = Math.max(viewport.scrollHeight - viewport.clientHeight, 0)
-      const atBottom = viewport.scrollTop >= maxScrollTop - 1
-      const baseBottom = Math.max(firstTop, Math.min(maxBottom, firstTop + viewport.scrollTop))
-
-      const deltaSeconds =
-        lastTime === null ? 0 : Math.max((timestamp - lastTime) / 1000, 0)
-      if (atBottom && deltaSeconds > 0) {
-        tailOffsetPx = Math.min(
-          Math.max(maxBottom - baseBottom, 0),
-          tailOffsetPx + deltaSeconds * SCANLINE_TAIL_SPEED_PX_PER_SECOND,
-        )
-      } else {
-        tailOffsetPx = 0
-      }
-
-      const nextBottom = Math.min(maxBottom, baseBottom + tailOffsetPx)
-      const readoutCrossBottom = activeFunctionOverlay
-        ? Math.min(
-            maxBottom,
-            activeFunctionOverlay.top + Math.max(Math.min(activeFunctionOverlay.height * 0.2, 20), 4),
-          )
-        : firstTop
-      maxReachedBottomPx = Math.max(maxReachedBottomPx, nextBottom, readoutCrossBottom)
-      const nextHeight = Math.max(3, maxReachedBottomPx - firstTop)
-
-      setScanlineExtent((previous) => {
+      setReviewRailExtent((previous) => {
         if (
           previous &&
           Math.abs(previous.top - firstTop) < 0.2 &&
-          Math.abs(previous.height - nextHeight) < 0.2
+          Math.abs(previous.height - railHeight) < 0.2 &&
+          Math.abs(previous.lineHeight - lineHeight) < 0.2
         ) {
           return previous
         }
 
-        return { top: firstTop, height: nextHeight }
+        return { top: firstTop, height: railHeight, lineHeight }
       })
-
-      lastTime = timestamp
-      frameId = window.requestAnimationFrame(tick)
     }
 
-    frameId = window.requestAnimationFrame(tick)
+    syncRail()
+    window.addEventListener('resize', syncRail)
 
     return () => {
-      if (frameId) {
-        window.cancelAnimationFrame(frameId)
-      }
+      window.removeEventListener('resize', syncRail)
     }
-  }, [activeFunctionOverlay, isReviewOpen, reviewLines.length])
+  }, [isReviewOpen, reviewLines.length])
 
   useEffect(() => {
     if (!fileContextMenu) {
@@ -1022,9 +1015,9 @@ function AppLayout({ children }: { children: ReactNode }) {
         isOpen={isReviewOpen}
         isAutoScrolling={isAutoScrolling}
         reviewLines={reviewLines}
+        reviewFunctions={reviewFunctions}
         activeReviewFunction={activeReviewFunction}
-        activeReadoutProgress={activeReadoutProgress}
-        scanlineExtent={scanlineExtent}
+        railExtent={reviewRailExtent}
         overlays={reviewOverlays}
         reviewViewportRef={reviewViewportRef}
         reviewCodeLineRef={reviewCodeLineRef}
@@ -1036,6 +1029,7 @@ function AppLayout({ children }: { children: ReactNode }) {
         message={processorMessage}
         lineCount={processedLineCount}
         functions={processedFunctions}
+        stateDeclarations={processedStateDeclarations}
         onClose={() => setIsProcessorModalOpen(false)}
       />
       <NewPageModal
